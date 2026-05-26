@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="description" content="StudyEasy — AI-powered study assistant. Upload documents to get summaries, chat with your documents using RAG, and generate visual mind maps." />
+  <title>StudyEasy — AI Study Assistant</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
+    body { background-color: #1a1a1a; color: #ffffff; min-height: 100vh; padding: 20px; }
+    .header { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+    .header img { width: 24px; height: 24px; }
+    .container { max-width: 800px; margin: 0 auto; background-color: rgba(255, 255, 255, 0.05); padding: 20px; border-radius: 8px; }
+    .title { margin-bottom: 5px; }
+    .subtitle { color: #888; margin-bottom: 20px; }
+    .tabs { display: flex; margin-bottom: 20px; background-color: rgba(0, 0, 0, 0.3); border-radius: 4px; overflow: hidden; }
+    .tab { flex: 1; padding: 10px; text-align: center; cursor: pointer; transition: background-color 0.3s; position: relative; user-select: none; font-size: 14px; }
+    .tab.active { background-color: rgba(255, 255, 255, 0.1); }
+    .tab:hover:not(.active) { background-color: rgba(255, 255, 255, 0.04); }
+
+    /* Tab badge (green dot) */
+    .tab-badge {
+      display: none; width: 8px; height: 8px;
+      background-color: #4CAF50; border-radius: 50%;
+      position: absolute; top: 6px; right: 12px;
+      animation: badgePulse 2s ease-in-out infinite;
+    }
+    .tab-badge.visible { display: inline-block; }
+    @keyframes badgePulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+
+    /* Upload Section (UNCHANGED) */
+    .upload-section { margin-bottom: 20px; }
+    .upload-label { display: block; margin-bottom: 10px; font-weight: bold; }
+    .file-input-wrapper { background-color: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 10px; display: flex; align-items: center; margin-bottom: 10px; }
+    .choose-file-btn { background: none; border: none; color: white; cursor: pointer; margin-right: 10px; font-size: 14px; }
+    .file-name { color: #888; font-size: 14px; flex-grow: 1; }
+    .file-size { color: #666; font-size: 12px; margin-left: 10px; }
+    .supported-formats { color: #666; font-size: 0.9em; margin-bottom: 20px; }
+    .error-message { color: #ff4444; font-size: 0.9em; margin-top: 5px; display: none; }
+    .format-section { margin-bottom: 20px; }
+    .format-section h3 { margin-bottom: 10px; }
+    .format-dropdown { width: 100%; padding: 10px; background-color: #1a1a1a; color: white; border: 1px solid #333; border-radius: 4px; cursor: pointer; appearance: none; }
+    .format-dropdown:focus { outline: none; border-color: #444; }
+    .generate-btn { width: 100%; padding: 12px; background-color: #2a2a2a; color: white; border: none; border-radius: 4px; cursor: pointer; transition: background-color 0.3s; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+    .generate-btn:hover:not(:disabled) { background-color: #333; }
+    .generate-btn:disabled { background-color: #1a1a1a; cursor: not-allowed; color: #666; }
+    .pro-tip { color: #666; font-size: 0.9em; margin-top: 20px; }
+
+    /* CSS Spinner */
+    .spinner { display: none; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.2); border-top: 2px solid #ffffff; border-radius: 50%; animation: spin 0.8s linear infinite; }
+    .spinner.active { display: inline-block; }
+    @keyframes spin { 0%{transform:rotate(0deg);} 100%{transform:rotate(360deg);} }
+
+    /* Result section (UNCHANGED) */
+    .result-section { display: none; white-space: pre-wrap; background-color: rgba(255, 255, 255, 0.05); padding: 20px; border-radius: 4px; margin-top: 20px; position: relative; }
+    .copy-btn { position: absolute; top: 10px; right: 10px; background-color: #2a2a2a; color: white; border: 1px solid #444; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; transition: background-color 0.3s; z-index: 2; }
+    .copy-btn:hover { background-color: #333; }
+    .word-count { color: #666; font-size: 12px; margin-top: 12px; }
+    .success-message { color: #4CAF50; margin-top: 10px; display: none; font-size: 14px; }
+
+    /* ═══════════════════════════════════════════ */
+    /* CHAT SECTION — REDESIGNED                  */
+    /* ═══════════════════════════════════════════ */
+    #chatSection { display: none; margin-top: 20px; }
+
+    .chat-controls { display: flex; gap: 10px; margin-bottom: 15px; align-items: center; flex-wrap: wrap; }
+    .chat-controls select { flex: 1; padding: 10px; background-color: #1a1a1a; color: white; border: 1px solid #333; border-radius: 4px; appearance: none; min-width: 150px; font-size: 13px; }
+    .chat-upload-btn {
+      padding: 10px 16px; background-color: #1a2d50; color: #7ab3ff;
+      border: 1px solid #2d5a8e; border-radius: 8px; cursor: pointer;
+      font-size: 13px; transition: all 0.3s; white-space: nowrap;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .chat-upload-btn:hover:not(:disabled) { background-color: #1f3a6e; }
+    .chat-upload-btn:disabled { background-color: #111; cursor: not-allowed; color: #555; border-color: #333; }
+
+    .chat-history {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid #2a2a3a;
+      border-radius: 10px;
+      padding: 20px;
+      height: 320px;
+      overflow-y: auto;
+      scroll-behavior: smooth;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin-bottom: 12px;
+    }
+    .chat-history::-webkit-scrollbar { width: 5px; }
+    .chat-history::-webkit-scrollbar-track { background: transparent; }
+    .chat-history::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+
+    .chat-empty { color: #555; text-align: center; padding: 40px 20px; font-size: 14px; }
+
+    /* Chat message animations */
+    @keyframes chatFadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* User messages — RIGHT side, blue */
+    .chat-msg { animation: chatFadeIn 0.25s ease forwards; }
+    .chat-msg.user { display: flex; justify-content: flex-end; }
+    .chat-msg.user .chat-bubble {
+      background-color: #1a2d50;
+      border: 1px solid #2d5a8e;
+      border-radius: 12px 12px 4px 12px;
+      padding: 10px 14px;
+      max-width: 78%;
+      color: #e0eaff;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    /* AI messages — LEFT side, dark */
+    .chat-msg.ai { display: flex; flex-direction: column; align-items: flex-start; }
+    .chat-msg.ai .chat-label {
+      font-size: 11px;
+      color: #5a8adf;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 4px;
+      font-weight: bold;
+    }
+    .chat-msg.ai .chat-bubble {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid #2a2a3a;
+      border-radius: 12px 12px 12px 4px;
+      padding: 12px 16px;
+      max-width: 85%;
+      color: #d0d8e8;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    /* System messages (document loaded) */
+    .chat-msg.system { display: flex; justify-content: center; }
+    .chat-msg.system .chat-bubble {
+      background: rgba(45,90,142,0.15);
+      border: 1px solid rgba(45,90,142,0.3);
+      border-radius: 8px;
+      padding: 8px 16px;
+      color: #7ab3ff;
+      font-size: 12px;
+      text-align: center;
+      max-width: 90%;
+    }
+
+    /* Source pill badges */
+    .chat-sources { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .source-pill {
+      background: #1a1a2a;
+      border: 1px solid #333;
+      color: #888;
+      font-size: 11px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+    }
+    .source-pill:hover { border-color: #5a8adf; color: #aab4cc; }
+    .source-tooltip {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 0;
+      background: #1e1e2e;
+      border: 1px solid #333a50;
+      border-radius: 8px;
+      padding: 8px 12px;
+      color: #aab4cc;
+      font-size: 11px;
+      line-height: 1.4;
+      width: 260px;
+      z-index: 50;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+      pointer-events: none;
+    }
+    .source-pill:hover .source-tooltip { display: block; }
+
+    /* Typing indicator — 3 dot pulse */
+    .typing-indicator { display: flex; align-items: center; gap: 5px; padding: 10px 16px; }
+    .typing-dot {
+      width: 7px; height: 7px;
+      background-color: #5a8adf;
+      border-radius: 50%;
+      animation: dotPulse 1.2s ease-in-out infinite;
+    }
+    .typing-dot:nth-child(2) { animation-delay: 0.15s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes dotPulse {
+      0%,100% { opacity: 0.2; transform: scale(0.8); }
+      50% { opacity: 1; transform: scale(1.1); }
+    }
+
+    /* Chat input bar */
+    .chat-input-row { display: flex; gap: 8px; }
+    .chat-input-row input {
+      flex: 1; padding: 12px 16px;
+      background-color: #111; color: white;
+      border: 1px solid #333; border-radius: 8px;
+      font-size: 14px; outline: none;
+      transition: border-color 0.3s, box-shadow 0.3s;
+    }
+    .chat-input-row input:focus { border-color: #2d5a8e; box-shadow: 0 0 0 3px rgba(45,90,142,0.2); }
+    .chat-input-row input::placeholder { color: #555; }
+    .chat-send-btn {
+      padding: 10px 20px; background-color: #1a2d50; color: #7ab3ff;
+      border: 1px solid #2d5a8e; border-radius: 8px; cursor: pointer;
+      font-size: 14px; transition: all 0.3s;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .chat-send-btn:hover:not(:disabled) { background-color: #1f3a6e; }
+    .chat-send-btn:disabled { background-color: #111; cursor: not-allowed; color: #444; border-color: #333; }
+
+    /* ═══════════════════════════════════════════ */
+    /* MIND MAP SECTION — REDESIGNED (D3.js)      */
+    /* ═══════════════════════════════════════════ */
+    #mindmapSection { display: none; margin-top: 20px; }
+    #mindmapCanvas {
+      margin-top: 16px;
+      background: radial-gradient(ellipse at center, #1a1a2e 0%, #111116 100%);
+      border: 1px solid #2a2a3a;
+      border-radius: 12px;
+      height: 390px;
+      position: relative;
+      overflow: hidden;
+    }
+    #mindmapCanvas svg { width: 100%; height: 100%; display: block; }
+    #mindmapCanvas .empty-state { color: #555; text-align: center; font-size: 14px; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); }
+
+    .mindmap-actions { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+    .mindmap-actions button { padding: 8px 16px; background-color: #2a2a2a; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; transition: background-color 0.3s; }
+    .mindmap-actions button:hover { background-color: #333; }
+
+    /* Mind map modal */
+    .mm-modal { display: none; position: fixed; background: #1e1e2e; border: 1px solid #333a50; border-radius: 8px; padding: 16px; width: 300px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); z-index: 1000; max-height: 400px; overflow-y: auto; }
+    .mm-modal-close { position: absolute; top: 10px; right: 12px; background: none; border: none; color: #aab4cc; font-size: 18px; cursor: pointer; }
+    .mm-modal-close:hover { color: white; }
+    .mm-modal h4 { color: white; margin-bottom: 8px; font-size: 14px; padding-right: 20px; }
+    .mm-modal-content { color: #aab4cc; font-size: 13px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M21 5c-1.11-.35-2.33-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1zm0 13.5c-1.1-.35-2.3-.5-3.5-.5-1.7 0-4.15.65-5.5 1.5V8c1.35-.85 3.8-1.5 5.5-1.5 1.2 0 2.4.15 3.5.5v11.5z'/%3E%3C/svg%3E" alt="Book icon" />
+    <h1>StudyEasy</h1>
+  </div>
+
+  <div class="container">
+    <h2 class="title">StudyEasy</h2>
+    <p class="subtitle">Upload your study material and get AI-generated summaries</p>
+
+    <div class="tabs">
+      <div class="tab active" id="tabUpload" onclick="switchTab('upload')">Upload<span class="tab-badge" id="badgeUpload"></span></div>
+      <div class="tab" id="tabResults" onclick="switchTab('results')">Results<span class="tab-badge" id="badgeResults"></span></div>
+      <div class="tab" id="tabChat" onclick="switchTab('chat')">Chat<span class="tab-badge" id="badgeChat"></span></div>
+      <div class="tab" id="tabMindmap" onclick="switchTab('mindmap')">Mind Map<span class="tab-badge" id="badgeMindmap"></span></div>
+    </div>
+
+    <!-- ═══ Upload Section (UNCHANGED) ═══ -->
+    <div id="uploadSection">
+      <div class="upload-section">
+        <label class="upload-label">Upload Document(s)</label>
+        <div class="file-input-wrapper">
+          <input type="file" id="fileInput" multiple accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg" style="display: none" />
+          <button class="choose-file-btn" onclick="document.getElementById('fileInput').click()">Choose Files</button>
+          <span class="file-name" id="fileName">No files chosen</span>
+          <span class="file-size" id="fileSize"></span>
+        </div>
+        <div class="supported-formats">Supported formats: PDF, Word, Text, PNG, JPG (Multiple files allowed, Max size total: 30MB)</div>
+        <div class="error-message" id="errorMessage"></div>
+      </div>
+      <div class="format-section">
+        <h3>Summary Format</h3>
+        <select class="format-dropdown" name="format" id="formatSelect">
+          <option value="bullets">Bullet Points</option>
+          <option value="paragraphs">Paragraphs</option>
+          <option value="detailed">Detailed Analysis</option>
+        </select>
+      </div>
+      <button class="generate-btn" id="generateBtn" onclick="generateSummary()" disabled>
+        <span class="spinner" id="summarySpinner"></span>
+        <span id="generateBtnText">Generate Summary</span>
+      </button>
+      <div class="pro-tip">Pro tip: For better results, ensure your files are clear and well-formatted.</div>
+    </div>
+
+    <!-- ═══ Results Section (UNCHANGED) ═══ -->
+    <div class="result-section" id="resultSection">
+      <button class="copy-btn" id="copyBtn" onclick="copyResult()">📋 Copy</button>
+      <div class="result-content" id="resultContent"></div>
+      <div class="word-count" id="wordCount"></div>
+    </div>
+    <div class="success-message" id="successMessage">Success! Your file has been processed successfully.</div>
+
+    <!-- ═══ Chat Section (REDESIGNED) ═══ -->
+    <div id="chatSection">
+      <div class="chat-controls">
+        <select id="docSelector">
+          <option value="">— Select a document —</option>
+        </select>
+        <button class="chat-upload-btn" id="chatUploadBtn" onclick="uploadForChat()" disabled>
+          <span class="spinner" id="chatUploadSpinner"></span>
+          <span id="chatUploadText">📤 Upload for Chat</span>
+        </button>
+      </div>
+      <div class="chat-history" id="chatHistory">
+        <div class="chat-empty" id="chatEmpty">Upload a document and start asking questions ✨</div>
+      </div>
+      <div class="chat-input-row">
+        <input type="text" id="chatInput" placeholder="Ask a question about your document..." disabled />
+        <button class="chat-send-btn" id="chatSendBtn" onclick="sendChatMessage()" disabled>
+          <span class="spinner" id="chatSendSpinner"></span>
+          <span>Send</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ═══ Mind Map Section (REDESIGNED with D3) ═══ -->
+    <div id="mindmapSection">
+      <button class="generate-btn" id="mindmapBtn" onclick="generateMindMap()" disabled>
+        <span class="spinner" id="mindmapSpinner"></span>
+        <span id="mindmapBtnText">Generate Mind Map</span>
+      </button>
+      <div id="mindmapCanvas">
+        <div class="empty-state" id="mindmapEmpty">Select a file and click "Generate Mind Map" to visualize your document 🗺️</div>
+      </div>
+      
+      <!-- Info Modal for Leaf Node clicks (MOVED OUTSIDE CANVAS) -->
+      <div class="mm-modal" id="mmModal">
+        <button class="mm-modal-close" onclick="document.getElementById('mmModal').style.display='none'">×</button>
+        <h4 id="mmModalTitle">Node Title</h4>
+        <div class="mm-modal-content" id="mmModalContent">Loading...</div>
+      </div>
+
+      <div class="mindmap-actions" id="mindmapActions" style="display:none;">
+        <button onclick="downloadMindMapPNG()">⬇️ Download as PNG</button>
+        <button onclick="resetMindMapZoom()">🔄 Reset View</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tooltip for mind map hovering -->
+  <div class="mm-tooltip" id="mmTooltip" style="display:none; position:fixed; background-color:#1e1e2e; color:#d0d8e8; padding:8px 14px; border-radius:8px; font-size:13px; max-width:280px; border:1px solid #333a50; z-index:100; pointer-events:none; box-shadow:0 4px 16px rgba(0,0,0,0.5);"></div>
+
+  <script>
+    // ─── DOM References ─────────────────────────────────────────
+    const fileInput = document.getElementById('fileInput');
+    const fileNameEl = document.getElementById('fileName');
+    const fileSizeEl = document.getElementById('fileSize');
+    const errorMessage = document.getElementById('errorMessage');
+    const generateBtn = document.getElementById('generateBtn');
+    const generateBtnText = document.getElementById('generateBtnText');
+    const summarySpinner = document.getElementById('summarySpinner');
+    const resultSection = document.getElementById('resultSection');
+    const resultContent = document.getElementById('resultContent');
+    const successMessage = document.getElementById('successMessage');
+    const formatSelect = document.getElementById('formatSelect');
+    const wordCountEl = document.getElementById('wordCount');
+
+    const MAX_FILE_SIZE = 30 * 1024 * 1024;
+    let currentDocId = null;
+    let currentMindmapDocId = null;
+    let lastCharCount = 0;
+
+    // ─── Utility ────────────────────────────────────────────────
+    function formatFileSizeStr(bytes) {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // ─── File Selection ─────────────────────────────────────────
+    fileInput.addEventListener('change', function(e) {
+      const files = e.target.files;
+      errorMessage.style.display = 'none';
+      generateBtn.disabled = true;
+      document.getElementById('mindmapBtn').disabled = true;
+      document.getElementById('chatUploadBtn').disabled = true;
+      document.getElementById('mmModal').style.display = 'none';
+
+      if (files.length > 0) {
+        let names = [];
+        let totalSize = 0;
+        for (let i = 0; i < files.length; i++) {
+          names.push(files[i].name);
+          totalSize += files[i].size;
+        }
+
+        fileNameEl.textContent = names.join(', ');
+        fileSizeEl.textContent = formatFileSizeStr(totalSize);
+        if (totalSize > MAX_FILE_SIZE) {
+          errorMessage.textContent = `Total file size exceeds 30MB limit. Current size: ${formatFileSizeStr(totalSize)}`;
+          errorMessage.style.display = 'block';
+        } else {
+          generateBtn.disabled = false;
+          document.getElementById('mindmapBtn').disabled = false;
+          document.getElementById('chatUploadBtn').disabled = false;
+        }
+      } else {
+        fileNameEl.textContent = 'No files chosen';
+        fileSizeEl.textContent = '';
+      }
+    });
+
+    // ─── Tab Switching ──────────────────────────────────────────
+    function switchTab(tabName) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      const tabId = 'tab' + tabName.charAt(0).toUpperCase() + tabName.slice(1);
+      document.getElementById(tabId).classList.add('active');
+
+      document.getElementById('uploadSection').style.display = tabName === 'upload' ? 'block' : 'none';
+      resultSection.style.display = tabName === 'results' ? 'block' : 'none';
+      successMessage.style.display = (tabName === 'results' && resultContent.innerHTML) ? 'block' : 'none';
+      document.getElementById('chatSection').style.display = tabName === 'chat' ? 'block' : 'none';
+      document.getElementById('mindmapSection').style.display = tabName === 'mindmap' ? 'block' : 'none';
+
+      if (tabName === 'chat') loadDocumentList();
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // EXISTING: Generate Summary
+    // ═══════════════════════════════════════════════════════════
+    async function generateSummary() {
+      const files = fileInput.files;
+      if (files.length === 0) return alert('Please select at least one file first.');
+      
+      let totalSize = 0;
+      for (const f of files) totalSize += f.size;
+      
+      if (totalSize > MAX_FILE_SIZE) {
+        errorMessage.textContent = `Total file size exceeds 30MB limit.`;
+        errorMessage.style.display = 'block';
+        return;
+      }
+      
+      const allowedTypes = ['application/pdf','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document','text/plain','image/png','image/jpeg'];
+      for (const f of files) {
+        if (!allowedTypes.includes(f.type)) return alert(`Invalid file type for: ${f.name}`);
+      }
+
+      generateBtn.disabled = true;
+      generateBtnText.textContent = 'Processing...';
+      summarySpinner.classList.add('active');
+      successMessage.style.display = 'none';
+
+      try {
+        const formData = new FormData();
+        formData.append('format', formatSelect.value);
+        for (let i = 0; i < files.length; i++) {
+          formData.append('files', files[i]);
+        }
+
+        const response = await fetch('/api/process', { method: 'POST', body: formData });
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const data = await response.json();
+        const format = formatSelect.value;
+
+        if (format === 'bullets') {
+          const bulletPoints = data.summary.split('\n').filter(l=>l.trim()).map(line=>`<li>${escapeHtml(line.replace(/^[-•*]\s*/,''))}</li>`).join('');
+          resultContent.innerHTML = `<ul style="list-style-type:disc;padding-left:20px;line-height:1.7;">${bulletPoints}</ul>`;
+        } else {
+          resultContent.innerHTML = `<pre style="white-space:pre-wrap;font-family:Arial,sans-serif;line-height:1.6;">${escapeHtml(data.summary)}</pre>`;
+        }
+        const wc = data.summary.split(/\s+/).filter(w=>w).length;
+        lastCharCount = data.charCount || 0;
+        wordCountEl.textContent = `~${wc} words summarized from ${lastCharCount.toLocaleString()} characters`;
+        document.getElementById('badgeResults').classList.add('visible');
+        successMessage.style.display = 'block';
+        resultSection.style.display = 'block';
+        switchTab('results');
+      } catch (error) {
+        console.error('Error:', error);
+        alert(`Error processing file: ${error.message}`);
+      } finally {
+        generateBtn.disabled = false;
+        generateBtnText.textContent = 'Generate Summary';
+        summarySpinner.classList.remove('active');
+      }
+    }
+
+    function copyResult() {
+      navigator.clipboard.writeText(resultContent.innerText).then(() => {
+        const btn = document.getElementById('copyBtn');
+        btn.textContent = '✅ Copied!';
+        setTimeout(() => btn.textContent = '📋 Copy', 2000);
+      });
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // FEATURE 1: CHAT — REDESIGNED UI
+    // ═══════════════════════════════════════════════════════════
+    async function loadDocumentList() {
+      try {
+        const res = await fetch('/api/documents');
+        const docs = await res.json();
+        const sel = document.getElementById('docSelector');
+        sel.innerHTML = '<option value="">— Select a document —</option>';
+        docs.forEach(doc => {
+          const opt = document.createElement('option');
+          opt.value = doc.doc_id;
+          opt.textContent = `${doc.filename} (${doc.chunk_count} chunks)`;
+          sel.appendChild(opt);
+        });
+        if (currentDocId) sel.value = currentDocId;
+      } catch (err) { console.error('Error loading documents:', err); }
+    }
+
+    document.getElementById('docSelector').addEventListener('change', function() {
+      currentDocId = this.value || null;
+      document.getElementById('chatInput').disabled = !currentDocId;
+      document.getElementById('chatSendBtn').disabled = !currentDocId;
+    });
+
+    async function uploadForChat() {
+      const files = fileInput.files;
+      if (files.length === 0) return alert('Please select files in the Upload tab first.');
+      const btn = document.getElementById('chatUploadBtn');
+      const spinner = document.getElementById('chatUploadSpinner');
+      const textEl = document.getElementById('chatUploadText');
+      btn.disabled = true;
+      textEl.textContent = 'Uploading & Embedding...';
+      spinner.classList.add('active');
+      try {
+        const formData = new FormData();
+        for (let i = 0; i < files.length; i++) {
+          formData.append('files', files[i]);
+        }
+        const res = await fetch('/api/upload', { method: 'POST', body: formData });
+        if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+        const data = await res.json();
+        currentDocId = data.doc_id;
+        await loadDocumentList();
+        document.getElementById('docSelector').value = currentDocId;
+        document.getElementById('chatInput').disabled = false;
+        document.getElementById('chatSendBtn').disabled = false;
+        document.getElementById('badgeChat').classList.add('visible');
+        appendChatMessage('system', `📖 ${data.filename} loaded — ${data.chunks_stored} chunks ready for Q&A`, []);
+        document.getElementById('chatEmpty').style.display = 'none';
+      } catch (err) {
+        console.error('Upload error:', err);
+        alert('Error uploading document: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        textEl.textContent = '📤 Upload for Chat';
+        spinner.classList.remove('active');
+      }
+    }
+
+    async function sendChatMessage() {
+      const input = document.getElementById('chatInput');
+      const question = input.value.trim();
+      if (!question || !currentDocId) return;
+      input.value = '';
+      document.getElementById('chatEmpty').style.display = 'none';
+
+      // User message
+      appendChatMessage('user', question, []);
+
+      // Typing indicator
+      const typingEl = document.createElement('div');
+      typingEl.className = 'chat-msg ai';
+      typingEl.id = 'typingIndicator';
+      typingEl.innerHTML = `
+        <div class="chat-label">StudyEasy AI</div>
+        <div class="chat-bubble">
+          <div class="typing-indicator">
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+          </div>
+        </div>`;
+      document.getElementById('chatHistory').appendChild(typingEl);
+      scrollChatToBottom();
+
+      const sendBtn = document.getElementById('chatSendBtn');
+      sendBtn.disabled = true;
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question, doc_id: currentDocId })
+        });
+        if (!res.ok) throw new Error(`Chat failed: ${res.status}`);
+        const data = await res.json();
+        typingEl.remove();
+        appendChatMessage('ai', data.answer, data.sources || []);
+      } catch (err) {
+        typingEl.remove();
+        appendChatMessage('ai', '❌ Error: ' + err.message, []);
+      } finally {
+        sendBtn.disabled = false;
+      }
+    }
+
+    function appendChatMessage(role, text, sources) {
+      const history = document.getElementById('chatHistory');
+      const msgDiv = document.createElement('div');
+      msgDiv.className = `chat-msg ${role}`;
+
+      if (role === 'system') {
+        msgDiv.innerHTML = `<div class="chat-bubble">${escapeHtml(text)}</div>`;
+      } else if (role === 'user') {
+        msgDiv.innerHTML = `<div class="chat-bubble">${escapeHtml(text)}</div>`;
+      } else {
+        // AI message
+        let html = `<div class="chat-label">StudyEasy AI</div>`;
+        html += `<div class="chat-bubble">${formatChatText(text)}</div>`;
+        if (sources && sources.length > 0) {
+          html += `<div class="chat-sources">`;
+          sources.forEach((s, i) => {
+            html += `<span class="source-pill">📎 Source ${i + 1}
+              <span class="source-tooltip">${escapeHtml(s.excerpt)}<br><em style="color:#5a8adf;">Relevance: ${s.score}</em></span>
+            </span>`;
+          });
+          html += `</div>`;
+        }
+        msgDiv.innerHTML = html;
+      }
+
+      history.appendChild(msgDiv);
+      scrollChatToBottom();
+    }
+
+    function formatChatText(text) {
+      return escapeHtml(text).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+    }
+
+    function scrollChatToBottom() {
+      const h = document.getElementById('chatHistory');
+      requestAnimationFrame(() => { h.scrollTop = h.scrollHeight; });
+    }
+
+    document.getElementById('chatInput').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
+    });
+
+    // ═══════════════════════════════════════════════════════════
+    // FEATURE 2: MIND MAP — D3.js Force-Directed Graph
+    // ═══════════════════════════════════════════════════════════
+    let mindmapSvgEl = null;
+    let mindmapZoom = null;
+
+    async function generateMindMap() {
+      const files = fileInput.files;
+      if (files.length === 0) return alert('Please select files in the Upload tab first.');
+      const btn = document.getElementById('mindmapBtn');
+      const spinner = document.getElementById('mindmapSpinner');
+      const textEl = document.getElementById('mindmapBtnText');
+      btn.disabled = true;
+      textEl.textContent = 'Generating Mind Map...';
+      spinner.classList.add('active');
+      try {
+        const formData = new FormData();
+        for (let i = 0; i < files.length; i++) {
+          formData.append('files', files[i]);
+        }
+        const res = await fetch('/api/mindmap', { method: 'POST', body: formData });
+        if (!res.ok) throw new Error(`Mind map failed: ${res.status}`);
+        const data = await res.json();
+        
+        currentMindmapDocId = data.doc_id; // Save doc_id for leaf node extraction
+
+        renderMindMap(data);
+        document.getElementById('badgeMindmap').classList.add('visible');
+        document.getElementById('mindmapActions').style.display = 'flex';
+      } catch (err) {
+        console.error('Mind map error:', err);
+        document.getElementById('mindmapCanvas').innerHTML = `<div class="empty-state" style="color:#ff4444;">Error: ${escapeHtml(err.message)}</div>`;
+      } finally {
+        btn.disabled = false;
+        textEl.textContent = 'Generate Mind Map';
+        spinner.classList.remove('active');
+      }
+    }
+
+    function renderMindMap(data) {
+      const canvas = document.getElementById('mindmapCanvas');
+      // Clear previous SVGs, but DO NOT remove the modal if we accidentally moved it back inside.
+      d3.select(canvas).selectAll('svg').remove();
+      document.getElementById('mindmapEmpty')?.remove();
+
+      const W = canvas.clientWidth || 760;
+      const H = 580;
+
+      // Build nodes and links from hierarchical data
+      const nodes = [];
+      const links = [];
+
+      // Root node
+      const rootNode = { id: 'root', label: data.title || 'Document', type: 'root', fx: W / 2, fy: H / 2 };
+      nodes.push(rootNode);
+
+      const children = data.children || [];
+      children.forEach((child, ci) => {
+        const branchId = `branch-${ci}`;
+        const angle = (ci / children.length) * 2 * Math.PI - Math.PI / 2;
+        nodes.push({
+          id: branchId,
+          label: child.label || `Branch ${ci + 1}`,
+          type: 'branch',
+          x: W / 2 + 200 * Math.cos(angle),
+          y: H / 2 + 180 * Math.sin(angle)
+        });
+        links.push({ source: 'root', target: branchId, type: 'root-branch' });
+
+        const subs = child.children || [];
+        subs.forEach((sub, si) => {
+          const subId = `sub-${ci}-${si}`;
+          const subAngle = angle + (si - (subs.length - 1) / 2) * (0.45 / Math.max(subs.length - 1, 1));
+          nodes.push({
+            id: subId,
+            label: sub.label || `Sub ${si + 1}`,
+            type: 'sub',
+            x: W / 2 + 340 * Math.cos(subAngle),
+            y: H / 2 + 300 * Math.sin(subAngle),
+            parentAngle: angle
+          });
+          links.push({ source: branchId, target: subId, type: 'branch-sub' });
+        });
+      });
+
+      // Create SVG
+      const svg = d3.select(canvas).append('svg')
+        .attr('width', W).attr('height', H);
+
+      // Zoom + pan
+      mindmapZoom = d3.zoom()
+        .scaleExtent([0.3, 3])
+        .on('zoom', (event) => { g.attr('transform', event.transform); });
+      svg.call(mindmapZoom);
+
+      const g = svg.append('g');
+
+      // Defs for glow
+      const defs = svg.append('defs');
+      const glowFilter = defs.append('filter').attr('id', 'nodeGlow');
+      glowFilter.append('feGaussianBlur').attr('stdDeviation', '4').attr('result', 'coloredBlur');
+      const feMerge = glowFilter.append('feMerge');
+      feMerge.append('feMergeNode').attr('in', 'coloredBlur');
+      feMerge.append('feMergeNode').attr('in', 'SourceGraphic');
+
+      // Force simulation
+      const simulation = d3.forceSimulation(nodes)
+        .force('link', d3.forceLink(links).id(d => d.id).distance(d => d.type === 'root-branch' ? 180 : 110).strength(0.6))
+        .force('charge', d3.forceManyBody().strength(-350))
+        .force('center', d3.forceCenter(W / 2, H / 2))
+        .force('collision', d3.forceCollide().radius(d => {
+          if (d.type === 'root') return 70;
+          if (d.type === 'branch') return 55;
+          return 45;
+        }))
+        .alpha(1)
+        .alphaDecay(0.02);
+
+      // Draw links
+      const linkGroup = g.append('g');
+      const linkElements = linkGroup.selectAll('path')
+        .data(links).enter().append('path')
+        .attr('fill', 'none')
+        .attr('stroke', d => d.type === 'root-branch' ? '#2d5a8e' : '#333a50')
+        .attr('stroke-width', d => d.type === 'root-branch' ? 2 : 1.2)
+        .attr('stroke-dasharray', d => d.type === 'branch-sub' ? '5,4' : 'none')
+        .attr('opacity', 0.7);
+
+      // Draw nodes
+      const nodeGroup = g.append('g');
+      const nodeElements = nodeGroup.selectAll('g')
+        .data(nodes).enter().append('g')
+        .attr('cursor', 'grab')
+        .call(d3.drag()
+          .on('start', (event, d) => {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x; d.fy = d.y;
+            d3.select(event.sourceEvent.target.closest('g')).attr('cursor', 'grabbing');
+          })
+          .on('drag', (event, d) => {
+            d.fx = event.x; d.fy = event.y;
+          })
+          .on('end', (event, d) => {
+            if (!event.active) simulation.alphaTarget(0);
+            if (d.type !== 'root') { d.fx = null; d.fy = null; }
+            d3.select(event.sourceEvent.target.closest('g')).attr('cursor', 'grab');
+          })
+        );
+
+      // Node sizing
+      function getNodeDims(d) {
+        const label = d.label || '';
+        if (d.type === 'root') return { w: Math.max(label.length * 9.5 + 36, 140), h: 46, rx: 10 };
+        if (d.type === 'branch') return { w: Math.max(label.length * 7.5 + 28, 100), h: 36, rx: 8 };
+        return { w: Math.max(label.length * 6.5 + 22, 80), h: 28, rx: 6 };
+      }
+
+      // Rects
+      nodeElements.append('rect')
+        .attr('width', d => getNodeDims(d).w)
+        .attr('height', d => getNodeDims(d).h)
+        .attr('x', d => -getNodeDims(d).w / 2)
+        .attr('y', d => -getNodeDims(d).h / 2)
+        .attr('rx', d => getNodeDims(d).rx)
+        .attr('fill', d => ({ root: '#1f3a6e', branch: '#1a2d50', sub: '#1e1e2a' }[d.type]))
+        .attr('stroke', d => ({ root: '#3d6abf', branch: '#2d5a8e', sub: '#333a50' }[d.type]))
+        .attr('stroke-width', d => d.type === 'root' ? 2 : 1.5)
+        .attr('filter', d => d.type === 'root' ? 'url(#nodeGlow)' : 'none');
+
+      // Labels
+      nodeElements.append('text')
+        .text(d => {
+          const max = d.type === 'root' ? 26 : d.type === 'branch' ? 22 : 18;
+          return d.label.length > max ? d.label.substring(0, max - 1) + '…' : d.label;
+        })
+        .attr('text-anchor', 'middle')
+        .attr('dy', '0.35em')
+        .attr('fill', d => ({ root: '#ffffff', branch: '#a0c4ff', sub: '#aab4cc' }[d.type]))
+        .attr('font-size', d => ({ root: '15px', branch: '12.5px', sub: '11px' }[d.type]))
+        .attr('font-weight', d => d.type === 'root' ? 'bold' : 'normal')
+        .style('pointer-events', 'none');
+
+      // Hover glow
+      nodeElements.on('mouseover', function(event, d) {
+        d3.select(this).select('rect')
+          .transition().duration(200)
+          .attr('stroke', '#5a8adf')
+          .attr('stroke-width', d.type === 'root' ? 3 : 2);
+        // Tooltip
+        const tip = document.getElementById('mmTooltip');
+        tip.textContent = d.label;
+        tip.style.display = 'block';
+        tip.style.left = (event.pageX + 14) + 'px';
+        tip.style.top = (event.pageY - 12) + 'px';
+      }).on('mousemove', function(event) {
+        const tip = document.getElementById('mmTooltip');
+        tip.style.left = (event.pageX + 14) + 'px';
+        tip.style.top = (event.pageY - 12) + 'px';
+      }).on('mouseout', function(event, d) {
+        d3.select(this).select('rect')
+          .transition().duration(300)
+          .attr('stroke', ({ root: '#3d6abf', branch: '#2d5a8e', sub: '#333a50' }[d.type]))
+          .attr('stroke-width', d.type === 'root' ? 2 : 1.5);
+        document.getElementById('mmTooltip').style.display = 'none';
+      });
+
+      // Click for extracting leaf node details
+      nodeElements.on('click', async function(event, d) {
+        if (d.type === 'sub') {
+          // Open Modal
+          const modal = document.getElementById('mmModal');
+          const title = document.getElementById('mmModalTitle');
+          const content = document.getElementById('mmModalContent');
+          
+          modal.style.display = 'block';
+          
+          // Position it exactly next to the cursor/node
+          let leftPos = event.clientX + 15;
+          let topPos = event.clientY - 15;
+          
+          // boundary checks so it doesn't flow off the screen
+          const modalWidth = 300;
+          if (leftPos + modalWidth > window.innerWidth) {
+            leftPos = event.clientX - modalWidth - 15;
+          }
+          if (topPos + 300 > window.innerHeight) {
+            topPos = window.innerHeight - 320;
+          }
+
+          modal.style.left = leftPos + 'px';
+          modal.style.top = topPos + 'px';
+
+          title.textContent = d.label;
+          content.innerHTML = `<span class="spinner active" style="width:12px;height:12px;border-width:1px;vertical-align:middle;"></span> <span style="vertical-align:middle;">Extracting details from document...</span>`;
+
+          try {
+            const res = await fetch('/api/node-details', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ label: d.label, doc_id: currentMindmapDocId })
+            });
+            const result = await res.json();
+            if(!res.ok) throw new Error(result.error || 'Server error');
+            content.innerHTML = escapeHtml(result.explanation || "No details found in document.");
+          } catch(err) {
+            content.innerHTML = `<span style="color:#ff4444;">Error: ${escapeHtml(err.message)}</span>`;
+          }
+        }
+      });
+
+      // Tick — update positions
+      simulation.on('tick', () => {
+        linkElements.attr('d', d => {
+          const dx = d.target.x - d.source.x;
+          const dy = d.target.y - d.source.y;
+          const mx = (d.source.x + d.target.x) / 2;
+          const my = (d.source.y + d.target.y) / 2;
+          // Offset control point perpendicular to the line
+          const offset = d.type === 'root-branch' ? 30 : 15;
+          const cpx = mx + offset * (dy / (Math.sqrt(dx*dx + dy*dy) || 1));
+          const cpy = my - offset * (dx / (Math.sqrt(dx*dx + dy*dy) || 1));
+          return `M${d.source.x},${d.source.y} Q${cpx},${cpy} ${d.target.x},${d.target.y}`;
+        });
+
+        nodeElements.attr('transform', d => `translate(${d.x},${d.y})`);
+      });
+
+      // After simulation settles: subtle float animation on sub-nodes
+      simulation.on('end', () => {
+        startSubNodeFloat(nodeElements, nodes);
+      });
+
+      mindmapSvgEl = svg;
+    }
+
+    // Subtle sine wave float for sub-nodes
+    function startSubNodeFloat(nodeElements, nodes) {
+      const subNodes = nodes.filter(n => n.type === 'sub');
+      if (subNodes.length === 0) return;
+
+      // Store settled positions
+      subNodes.forEach(n => { n._baseX = n.x; n._baseY = n.y; });
+
+      let t = 0;
+      function floatTick() {
+        t += 0.015;
+        subNodes.forEach((n, i) => {
+          const offset = Math.sin(t + i * 0.7) * 3;
+          n.y = n._baseY + offset;
+          n.x = n._baseX + Math.cos(t + i * 0.5) * 1.5;
+        });
+        nodeElements.filter(d => d.type === 'sub')
+          .attr('transform', d => `translate(${d.x},${d.y})`);
+
+        // Also update connected links
+        d3.selectAll('#mindmapCanvas path[fill="none"]').attr('d', function() {
+          const d = d3.select(this).datum();
+          if (!d) return;
+          const dx = d.target.x - d.source.x;
+          const dy = d.target.y - d.source.y;
+          const mx = (d.source.x + d.target.x) / 2;
+          const my = (d.source.y + d.target.y) / 2;
+          const offset = d.type === 'root-branch' ? 30 : 15;
+          const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+          const cpx = mx + offset * (dy / dist);
+          const cpy = my - offset * (dx / dist);
+          return `M${d.source.x},${d.source.y} Q${cpx},${cpy} ${d.target.x},${d.target.y}`;
+        });
+
+        requestAnimationFrame(floatTick);
+      }
+      requestAnimationFrame(floatTick);
+    }
+
+    function resetMindMapZoom() {
+      if (mindmapSvgEl && mindmapZoom) {
+        mindmapSvgEl.transition().duration(500).call(mindmapZoom.transform, d3.zoomIdentity);
+      }
+    }
+
+    // Download Mind Map as PNG
+    function downloadMindMapPNG() {
+      const svgEl = document.querySelector('#mindmapCanvas svg');
+      if (!svgEl) return alert('No mind map to download.');
+
+      const serializer = new XMLSerializer();
+      const svgStr = serializer.serializeToString(svgEl);
+      const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
+
+      const img = new Image();
+      img.onload = function() {
+        const canvas = document.createElement('canvas');
+        canvas.width = svgEl.clientWidth * 2;
+        canvas.height = svgEl.clientHeight * 2;
+        const ctx = canvas.getContext('2d');
+        ctx.scale(2, 2);
+        // Draw dark bg
+        ctx.fillStyle = '#111116';
+        ctx.fillRect(0, 0, svgEl.clientWidth, svgEl.clientHeight);
+        ctx.drawImage(img, 0, 0);
+        URL.revokeObjectURL(url);
+        canvas.toBlob(function(blob) {
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'studyeasy-mindmap.png';
+          a.click();
+        }, 'image/png');
+      };
+      img.src = url;
+    }
+  </script>
+</body>
+</html>
